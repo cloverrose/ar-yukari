@@ -4,6 +4,8 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.opencv.android.BaseLoaderCallback;
 import org.opencv.android.CameraBridgeViewBase.CvCameraViewFrame;
@@ -11,8 +13,12 @@ import org.opencv.android.LoaderCallbackInterface;
 import org.opencv.android.OpenCVLoader;
 import org.opencv.core.Core;
 import org.opencv.core.Mat;
+import org.opencv.core.MatOfPoint;
+import org.opencv.core.MatOfPoint2f;
 import org.opencv.core.MatOfRect;
+import org.opencv.core.Point;
 import org.opencv.core.Rect;
+import org.opencv.core.RotatedRect;
 import org.opencv.core.Scalar;
 import org.opencv.core.Size;
 import org.opencv.android.CameraBridgeViewBase;
@@ -22,6 +28,7 @@ import org.opencv.imgproc.Imgproc;
 
 import android.app.Activity;
 import android.content.Context;
+import android.media.Image;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.Menu;
@@ -54,6 +61,7 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
     private int                    mAbsoluteFaceSize   = 0;
 
     private CameraBridgeViewBase   mOpenCvCameraView;
+
 
     private BaseLoaderCallback  mLoaderCallback = new BaseLoaderCallback(this) {
         @Override
@@ -165,39 +173,215 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         mRgba.release();
     }
 
-    public Mat onCameraFrame(CvCameraViewFrame inputFrame) {
 
+    private long counter = 0L;
+
+    public Mat onCameraFrame(CvCameraViewFrame inputFrame) {
         mRgba = inputFrame.rgba();
         mGray = inputFrame.gray();
+        if (counter == 0L) {
+            Mat thresholdImage = new Mat();
+            Mat cannyImage = new Mat();
+            double highThreshold = Imgproc.threshold(mGray, thresholdImage, 0, 255, Imgproc.THRESH_BINARY + Imgproc.THRESH_OTSU);
+            double lowThreshold = 0.5 * highThreshold;
+            Imgproc.Canny(thresholdImage, cannyImage, lowThreshold, highThreshold);
+            Log.d("Canny", "threshold low, high = " + lowThreshold + ", " + highThreshold);
+            this.findContours(cannyImage);
+        }
+        counter++;
+        if (counter > 1L) {
+            counter = 0L;
+        }
+        mRgba = this.drawEyes(mGray, mRgba);
+        return this.drawRect(mRgba); // debug
+    }
 
-        if (mAbsoluteFaceSize == 0) {
-            int height = mGray.rows();
-            if (Math.round(height * mRelativeFaceSize) > 0) {
-                mAbsoluteFaceSize = Math.round(height * mRelativeFaceSize);
+    private static final boolean debug = true;
+    private static final double aspect = 5;
+    private static final double minWidth = 10;
+    private static final double minHeight = aspect * minWidth;
+    private static final double maxWidth = 40;
+    private static final double maxHeight = aspect * maxWidth;
+    private static final Scalar eyeColor = new Scalar(255, 0, 0);
+
+    /**
+     *  目の基準となる四角を描く
+     * @param frame
+     * @return
+     */
+    private Mat drawRect(Mat frame) {
+        if (!debug) {
+            return frame;
+        }
+        Scalar color = new Scalar(0, 255, 0);
+        double x = 500;
+        double y = 500;
+        Imgproc.rectangle(frame, new Point(y + 0, x + 0), new Point(y + minHeight, x + minWidth), color, 2);
+        Imgproc.rectangle(frame, new Point(y + 0, x + 0), new Point(y + maxHeight, x + maxWidth), color, 2);
+        return frame;
+    }
+
+    private List<MatOfPoint> contours;
+    private Mat hierarchy;
+
+    private void findContours(Mat maskedImage) {
+        // init
+        contours = new ArrayList<>();
+        hierarchy = new Mat();
+
+        // find contours
+        // TODO 階層関係使ってないのでRETR_LISTで十分
+        Imgproc.findContours(maskedImage, contours, hierarchy, Imgproc.RETR_CCOMP, Imgproc.CHAIN_APPROX_SIMPLE);
+    }
+
+    /**
+     * 目の条件を満たしているか調べる。１つの目だけの条件
+     * @param width
+     * @param height
+     * @return
+     */
+    private boolean isEye(double width, double height) {
+        double areaMinThreshold = minWidth * minHeight;
+        double areaMaxThreshold = maxWidth * maxHeight;
+        double aspectMinThreshold = aspect * 0.7;
+        double aspectMaxThreshold = aspect / 0.7;
+
+        double area = width * height;
+        if (area < areaMinThreshold || area > areaMaxThreshold) {
+            return false;
+        }
+        double aspect = Math.max(width, height) / Math.min(width, height);
+        if (aspect < aspectMinThreshold || aspect > aspectMaxThreshold) {
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * 目の条件を満たしているか調べる。２つの目での条件
+     * @param rr1
+     * @param rr2
+     * @return
+     */
+    private boolean isEyes(RotatedRect rr1, RotatedRect rr2) {
+        // 大きさがだいたい同じ
+        double w1 = rr1.size.width;
+        double h1 = rr1.size.height;
+        double w2 = rr2.size.width;
+        double h2 = rr2.size.height;
+        if (Math.max(w1, w2) / Math.min(w1, w2) > 1.1 || Math.max(h1, h2) / Math.min(h1, h2) > 1.1) {
+            return false;
+        }
+
+        // 角度がだいたい同じ
+        double a1 = rr1.angle;
+        double a2 = rr2.angle;
+        if (Math.abs(a1 - a2) > 3) {
+            return false;
+        }
+
+        // 距離がいい感じ
+        double cx1;
+        double cy1;
+        {
+            Point points[] = new Point[4];
+            rr1.points(points);
+            double sumX = 0.0;
+            double sumY = 0.0;
+            for (Point p : points) {
+                sumX += p.x;
+                sumY += p.y;
             }
-            mNativeDetector.setMinFaceSize(mAbsoluteFaceSize);
+            cx1 = sumX / 4.0;
+            cy1 = sumY / 4.0;
+        }
+        double cx2;
+        double cy2;
+        double nearDistance = 0.0;
+        double farDistance = 0.0;
+        {
+            Point points[] = new Point[4];
+            rr2.points(points);
+            double sumX = 0.0;
+            double sumY = 0.0;
+            int pi = 0;
+            for (Point p : points) {
+                sumX += p.x;
+                sumY += p.y;
+
+                double dist = Math.sqrt(Math.pow(cx1 - p.x, 2) + Math.pow(cy1 - p.y, 2));
+                if (pi == 0) {
+                    nearDistance = dist;
+                    farDistance = dist;
+                } else {
+                    nearDistance = Math.min(nearDistance, dist);
+                    farDistance = Math.max(farDistance, dist);
+                }
+                pi++;
+            }
+            cx2 = sumX / 4.0;
+            cy2 = sumY / 4.0;
         }
 
-        MatOfRect faces = new MatOfRect();
-
-        if (mDetectorType == JAVA_DETECTOR) {
-            if (mJavaDetector != null)
-                mJavaDetector.detectMultiScale(mGray, faces, 1.1, 2, 2, // TODO: objdetect.CV_HAAR_SCALE_IMAGE
-                        new Size(mAbsoluteFaceSize, mAbsoluteFaceSize), new Size());
-        }
-        else if (mDetectorType == NATIVE_DETECTOR) {
-            if (mNativeDetector != null)
-                mNativeDetector.detect(mGray, faces);
-        }
-        else {
-            Log.e(TAG, "Detection method is not selected!");
+        // 左右の目の重心は、目の横幅の5倍くらい離れているのが理想
+        double distance = Math.sqrt(Math.pow(cx1 - cx2, 2) + Math.pow(cy1 - cy2, 2));
+        double expected = Math.min(w1, h1) * 5;
+        if (distance < expected * 0.7 || distance > expected / 0.7) {
+            return false;
         }
 
-        Rect[] facesArray = faces.toArray();
-        for (int i = 0; i < facesArray.length; i++)
-            Imgproc.rectangle(mRgba, facesArray[i].tl(), facesArray[i].br(), FACE_RECT_COLOR, 3);
 
-        return mRgba;
+        Log.d("isEyes", "near, far = " + nearDistance + ", " + farDistance);
+        if (farDistance / nearDistance > 1.3) {
+            return false;
+        }
+
+        return true;
+    }
+
+    private Mat drawEye(RotatedRect bbox, Mat frame) {
+        Point points[] = new Point[4];
+        bbox.points(points);
+        MatOfPoint mop = new MatOfPoint(points);
+        List<MatOfPoint> contours = new ArrayList<>();
+        contours.add(mop);
+        Imgproc.drawContours(frame, contours, 0, eyeColor, 2);
+        return frame;
+    }
+
+    private Mat drawEyes(Mat maskedImage, Mat frame) {
+        List<RotatedRect> rrList = new ArrayList<RotatedRect>();
+
+        // if any contour exist...
+        if (hierarchy.size().height > 0 && hierarchy.size().width > 0) {
+            // for each contour, display it in blue
+            for (int idx = 0; idx >= 0; idx = (int) hierarchy.get(0, idx)[0]) {
+                MatOfPoint pmat = contours.get(idx);
+                MatOfPoint2f ptmat2 = new MatOfPoint2f(pmat.toArray()); // API的にFloat型に変換する
+                RotatedRect bbox = Imgproc.minAreaRect(ptmat2); // 回転を考慮した外接矩形
+
+                if (!isEye(bbox.size.width, bbox.size.height)) {
+                    continue;
+                }
+                rrList.add(bbox);
+            }
+        }
+
+        int len = rrList.size();
+        for (int i = 0; i< len; i ++) {
+            RotatedRect rr1 = rrList.get(i);
+            for (int j =0; j<len; j++){
+                if (j == i){
+                    continue;
+                }
+                RotatedRect rr2 = rrList.get(j);
+                if (isEyes(rr1, rr2)) {
+                    drawEye(rr1, frame);
+                    drawEye(rr2, frame);
+                }
+            }
+        }
+        return frame;
     }
 
     @Override
