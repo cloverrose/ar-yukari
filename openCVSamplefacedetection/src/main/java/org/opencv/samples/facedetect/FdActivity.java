@@ -174,15 +174,17 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
     }
 
     private long startTime = System.currentTimeMillis();
-    enum State { ORIGNAL, FILTER, CANNY, RECT, EYE, EYES }
+    enum State { ORIGNAL, BLUR, FILTER, CANNY, RECT, EYE, EYES }
     private State state = State.ORIGNAL;
     private static final int step = 3; // sec
 
     private void updateState() {
         long currentTime = System.currentTimeMillis();
         double duration = (currentTime - startTime) / 1000.0; // sec
-        if (duration < step) {
+        if (duration < step * 0.5) {
             this.state = State.ORIGNAL;
+        } else if (duration < step * 1) {
+            this.state = State.BLUR;
         } else if (duration < step * 2) {
             this.state = State.FILTER;
         } else if (duration < step * 3) {
@@ -207,8 +209,15 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
             return mRgba;
         }
 
+        Mat blurImage = new Mat();
+        Imgproc.GaussianBlur(mGray, blurImage, new Size(7, 7), 0, 0);
+        if (debug && this.state == State.BLUR) {
+            Imgproc.putText(blurImage, this.state.toString(), new Point(140, 140), Core.FONT_HERSHEY_SIMPLEX, 5f, eyeColor);
+            return blurImage;
+        }
+
         Mat thresholdImage = new Mat();
-        double highThreshold = Imgproc.threshold(mGray, thresholdImage, 0, 255, Imgproc.THRESH_BINARY_INV + Imgproc.THRESH_OTSU);
+        double highThreshold = Imgproc.threshold(blurImage, thresholdImage, 0, 255, Imgproc.THRESH_BINARY_INV + Imgproc.THRESH_OTSU);
         double lowThreshold = 0.5 * highThreshold;
         if (debug && this.state == State.FILTER) {
             Imgproc.putText(thresholdImage, this.state.toString(), new Point(140, 140), Core.FONT_HERSHEY_SIMPLEX, 5f, eyeColor);
@@ -231,9 +240,10 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
     }
 
     private static final boolean debug = true;
-    private static final double aspect = 5;
+    private static final double aspect = 23/6;
+    private static final double shortAspect = 17/6;
     private static final double minWidth = 10;
-    private static final double minHeight = aspect * minWidth;
+    private static final double minHeight = shortAspect * minWidth;
     private static final double maxWidth = 40;
     private static final double maxHeight = aspect * maxWidth;
     private static final Scalar eyeColor = new Scalar(255, 0, 0);
@@ -278,8 +288,8 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
     private boolean isEye(double width, double height) {
         double areaMinThreshold = minWidth * minHeight;
         double areaMaxThreshold = maxWidth * maxHeight;
-        double aspectMinThreshold = aspect * 0.6;
-        double aspectMaxThreshold = aspect / 0.6;
+        double aspectMinThreshold = aspect * 0.7;
+        double aspectMaxThreshold = aspect / 0.7;
 
         if (debug && this.state == State.RECT) {
             areaMinThreshold *= 0.8;
@@ -314,7 +324,7 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         double h1 = rr1.size.height;
         double w2 = rr2.size.width;
         double h2 = rr2.size.height;
-        if (Math.max(w1, w2) / Math.min(w1, w2) > 1.1 || Math.max(h1, h2) / Math.min(h1, h2) > 1.1) {
+        if (Math.max(w1, w2) / Math.min(w1, w2) > 1.4 || Math.max(h1, h2) / Math.min(h1, h2) > 1.4) {
             return false;
         }
 
