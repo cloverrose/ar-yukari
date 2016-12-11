@@ -187,11 +187,11 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
             this.state = State.FILTER;
         } else if (duration < step * 3) {
             this.state = State.CANNY;
-        } else if (duration < step * 4 * 2) {
+        } else if (duration < step * 4) {
             this.state = State.RECT;
-        } else if (duration < step * 5 * 2) {
+        } else if (duration < step * 5) {
             this.state = State.EYE;
-        } else if (duration < step * 6 * 2) {
+        } else if (duration < step * 6) {
             this.state = State.EYES;
         } else {
             startTime = currentTime;
@@ -203,6 +203,7 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         mGray = inputFrame.gray();
         updateState();
         if (debug && this.state == State.ORIGNAL) {
+            Imgproc.putText(mRgba, this.state.toString(), new Point(140, 140), Core.FONT_HERSHEY_SIMPLEX, 5f, eyeColor);
             return mRgba;
         }
 
@@ -210,6 +211,7 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         double highThreshold = Imgproc.threshold(mGray, thresholdImage, 0, 255, Imgproc.THRESH_BINARY_INV + Imgproc.THRESH_OTSU);
         double lowThreshold = 0.5 * highThreshold;
         if (debug && this.state == State.FILTER) {
+            Imgproc.putText(thresholdImage, this.state.toString(), new Point(140, 140), Core.FONT_HERSHEY_SIMPLEX, 5f, eyeColor);
             return thresholdImage;
         }
 
@@ -217,12 +219,14 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         Imgproc.Canny(thresholdImage, cannyImage, lowThreshold, highThreshold);
         Log.d("Canny", "threshold low, high = " + lowThreshold + ", " + highThreshold);
         if (debug && this.state == State.CANNY) {
+            Imgproc.putText(cannyImage, this.state.toString(), new Point(140, 140), Core.FONT_HERSHEY_SIMPLEX, 5f, eyeColor);
             return cannyImage;
         }
 
         this.findContours(cannyImage);
 
         mRgba = this.drawEyes(mGray, mRgba);
+        Imgproc.putText(mRgba, this.state.toString(), new Point(140, 140), Core.FONT_HERSHEY_SIMPLEX, 5f, eyeColor);
         return this.drawRect(mRgba); // debug
     }
 
@@ -274,19 +278,14 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
     private boolean isEye(double width, double height) {
         double areaMinThreshold = minWidth * minHeight;
         double areaMaxThreshold = maxWidth * maxHeight;
-        double aspectMinThreshold = aspect * 0.7;
-        double aspectMaxThreshold = aspect / 0.7;
+        double aspectMinThreshold = aspect * 0.6;
+        double aspectMaxThreshold = aspect / 0.6;
 
         if (debug && this.state == State.RECT) {
-            double area = width * height;
-            if (area < areaMinThreshold * 0.8 || area > areaMaxThreshold / 0.8) {
-                return false;
-            }
-            double aspect = Math.max(width, height) / Math.min(width, height);
-            if (aspect < aspectMinThreshold * 0.8 || aspect > aspectMaxThreshold / 0.8) {
-                return false;
-            }
-            return true;
+            areaMinThreshold *= 0.8;
+            areaMaxThreshold /= 0.8;
+            aspectMinThreshold *= 0.8;
+            aspectMaxThreshold /= 0.8;
         }
 
         double area = width * height;
