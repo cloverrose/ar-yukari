@@ -15,9 +15,7 @@ import org.opencv.core.Core;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfPoint;
 import org.opencv.core.MatOfPoint2f;
-import org.opencv.core.MatOfRect;
 import org.opencv.core.Point;
-import org.opencv.core.Rect;
 import org.opencv.core.RotatedRect;
 import org.opencv.core.Scalar;
 import org.opencv.core.Size;
@@ -28,7 +26,6 @@ import org.opencv.imgproc.Imgproc;
 
 import android.app.Activity;
 import android.content.Context;
-import android.media.Image;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.Menu;
@@ -240,12 +237,12 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
     }
 
     private static final boolean debug = true;
-    private static final double aspect = 23/6;
+    private static final double longAspect = 23/6;
     private static final double shortAspect = 17/6;
     private static final double minWidth = 10;
     private static final double minHeight = shortAspect * minWidth;
     private static final double maxWidth = 40;
-    private static final double maxHeight = aspect * maxWidth;
+    private static final double maxHeight = longAspect * maxWidth;
     private static final Scalar eyeColor = new Scalar(255, 0, 0);
 
     /**
@@ -288,8 +285,8 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
     private boolean isEye(double width, double height) {
         double areaMinThreshold = minWidth * minHeight;
         double areaMaxThreshold = maxWidth * maxHeight;
-        double aspectMinThreshold = aspect * 0.7;
-        double aspectMaxThreshold = aspect / 0.7;
+        double aspectMinThreshold = longAspect * 0.7;
+        double aspectMaxThreshold = longAspect / 0.7;
 
         if (debug && this.state == State.RECT) {
             areaMinThreshold *= 0.8;
