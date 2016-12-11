@@ -173,25 +173,55 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         mRgba.release();
     }
 
+    private long startTime = System.currentTimeMillis();
+    enum State { ORIGNAL, FILTER, CANNY, RECT, EYE, EYES }
+    private State state = State.ORIGNAL;
+    private static final int step = 3; // sec
 
-    private long counter = 0L;
+    private void updateState() {
+        long currentTime = System.currentTimeMillis();
+        double duration = (currentTime - startTime) / 1000.0; // sec
+        if (duration < step) {
+            this.state = State.ORIGNAL;
+        } else if (duration < step * 2) {
+            this.state = State.FILTER;
+        } else if (duration < step * 3) {
+            this.state = State.CANNY;
+        } else if (duration < step * 4 * 2) {
+            this.state = State.RECT;
+        } else if (duration < step * 5 * 2) {
+            this.state = State.EYE;
+        } else if (duration < step * 6 * 2) {
+            this.state = State.EYES;
+        } else {
+            startTime = currentTime;
+        }
+    }
 
     public Mat onCameraFrame(CvCameraViewFrame inputFrame) {
         mRgba = inputFrame.rgba();
         mGray = inputFrame.gray();
-        if (counter == 0L) {
-            Mat thresholdImage = new Mat();
-            Mat cannyImage = new Mat();
-            double highThreshold = Imgproc.threshold(mGray, thresholdImage, 0, 255, Imgproc.THRESH_BINARY + Imgproc.THRESH_OTSU);
-            double lowThreshold = 0.5 * highThreshold;
-            Imgproc.Canny(thresholdImage, cannyImage, lowThreshold, highThreshold);
-            Log.d("Canny", "threshold low, high = " + lowThreshold + ", " + highThreshold);
-            this.findContours(cannyImage);
+        updateState();
+        if (debug && this.state == State.ORIGNAL) {
+            return mRgba;
         }
-        counter++;
-        if (counter > 1L) {
-            counter = 0L;
+
+        Mat thresholdImage = new Mat();
+        double highThreshold = Imgproc.threshold(mGray, thresholdImage, 0, 255, Imgproc.THRESH_BINARY_INV + Imgproc.THRESH_OTSU);
+        double lowThreshold = 0.5 * highThreshold;
+        if (debug && this.state == State.FILTER) {
+            return thresholdImage;
         }
+
+        Mat cannyImage = new Mat();
+        Imgproc.Canny(thresholdImage, cannyImage, lowThreshold, highThreshold);
+        Log.d("Canny", "threshold low, high = " + lowThreshold + ", " + highThreshold);
+        if (debug && this.state == State.CANNY) {
+            return cannyImage;
+        }
+
+        this.findContours(cannyImage);
+
         mRgba = this.drawEyes(mGray, mRgba);
         return this.drawRect(mRgba); // debug
     }
@@ -218,6 +248,7 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         double y = 500;
         Imgproc.rectangle(frame, new Point(y + 0, x + 0), new Point(y + minHeight, x + minWidth), color, 2);
         Imgproc.rectangle(frame, new Point(y + 0, x + 0), new Point(y + maxHeight, x + maxWidth), color, 2);
+
         return frame;
     }
 
@@ -246,6 +277,18 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         double aspectMinThreshold = aspect * 0.7;
         double aspectMaxThreshold = aspect / 0.7;
 
+        if (debug && this.state == State.RECT) {
+            double area = width * height;
+            if (area < areaMinThreshold * 0.8 || area > areaMaxThreshold / 0.8) {
+                return false;
+            }
+            double aspect = Math.max(width, height) / Math.min(width, height);
+            if (aspect < aspectMinThreshold * 0.8 || aspect > aspectMaxThreshold / 0.8) {
+                return false;
+            }
+            return true;
+        }
+
         double area = width * height;
         if (area < areaMinThreshold || area > areaMaxThreshold) {
             return false;
@@ -264,6 +307,9 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
      * @return
      */
     private boolean isEyes(RotatedRect rr1, RotatedRect rr2) {
+        if (debug && this.state == State.EYE || debug && this.state == State.RECT) {
+            return true;
+        }
         // 大きさがだいたい同じ
         double w1 = rr1.size.width;
         double h1 = rr1.size.height;
@@ -360,10 +406,9 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
                 MatOfPoint2f ptmat2 = new MatOfPoint2f(pmat.toArray()); // API的にFloat型に変換する
                 RotatedRect bbox = Imgproc.minAreaRect(ptmat2); // 回転を考慮した外接矩形
 
-                if (!isEye(bbox.size.width, bbox.size.height)) {
-                    continue;
+                if (isEye(bbox.size.width, bbox.size.height)) {
+                    rrList.add(bbox);
                 }
-                rrList.add(bbox);
             }
         }
 
