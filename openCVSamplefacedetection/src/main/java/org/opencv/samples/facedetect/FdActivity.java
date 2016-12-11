@@ -11,7 +11,9 @@ import org.opencv.android.BaseLoaderCallback;
 import org.opencv.android.CameraBridgeViewBase.CvCameraViewFrame;
 import org.opencv.android.LoaderCallbackInterface;
 import org.opencv.android.OpenCVLoader;
+import org.opencv.android.Utils;
 import org.opencv.core.Core;
+import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfPoint;
 import org.opencv.core.MatOfPoint2f;
@@ -21,12 +23,14 @@ import org.opencv.core.Scalar;
 import org.opencv.core.Size;
 import org.opencv.android.CameraBridgeViewBase;
 import org.opencv.android.CameraBridgeViewBase.CvCameraViewListener2;
+import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.objdetect.CascadeClassifier;
 import org.opencv.imgproc.Imgproc;
 
 import android.app.Activity;
 import android.content.Context;
 import android.os.Bundle;
+import android.provider.ContactsContract;
 import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -163,6 +167,7 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
     public void onCameraViewStarted(int width, int height) {
         mGray = new Mat();
         mRgba = new Mat();
+        loadYukari();
     }
 
     public void onCameraViewStopped() {
@@ -245,6 +250,18 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
     private static final double maxHeight = longAspect * maxWidth;
     private static final Scalar eyeColor = new Scalar(255, 0, 0);
 
+    private Mat yukari;
+
+    private void loadYukari() {
+        try {
+            yukari = Utils.loadResource(this, R.drawable.yukari, CvType.CV_8UC4);
+            Log.d("imread", "yukari.size = " + yukari.size());
+        } catch (IOException e) {
+            e.printStackTrace();
+            Log.d("imread", "error");
+        }
+    }
+
     /**
      *  目の基準となる四角を描く
      * @param frame
@@ -259,7 +276,22 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         double y = 500;
         Imgproc.rectangle(frame, new Point(y + 0, x + 0), new Point(y + minHeight, x + minWidth), color, 2);
         Imgproc.rectangle(frame, new Point(y + 0, x + 0), new Point(y + maxHeight, x + maxWidth), color, 2);
+        // return frame;
 
+
+        Point [] srcTri = new Point[]{
+                new Point(0.0f, 0.0f),
+                new Point(yukari.width(), 0.0f),
+                new Point(yukari.width(), yukari.height()),
+        };
+        Point [] dstTri = new Point[] {
+                new Point(0, 0),
+                new Point(100, 0),
+                new Point(100, 100),
+        };
+
+        Mat affineTrans = Imgproc.getAffineTransform(new MatOfPoint2f(srcTri), new MatOfPoint2f(dstTri));
+        Imgproc.warpAffine(yukari, frame, affineTrans, frame.size(), Imgproc.INTER_LINEAR, Core.BORDER_TRANSPARENT, new Scalar(0, 0, 0));
         return frame;
     }
 
