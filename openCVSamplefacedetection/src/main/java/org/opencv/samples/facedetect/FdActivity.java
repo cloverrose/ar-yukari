@@ -330,6 +330,66 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         return img_dst3;
     }
 
+    /**
+     *  縁ちゃん画像の目の位置を合わせるためのアフィン変換行列を計算
+     * @param foregroundImage
+     * @param rr1
+     * @param rr2
+     * @return
+     */
+    private Mat computeAffineTransform(Mat foregroundImage, RotatedRect rr1, RotatedRect rr2) {
+        Point [] srcTri = new Point[]{
+                new Point(0.0f, 0.0f),
+                new Point(foregroundImage.width(), 0.0f),
+                new Point(foregroundImage.width(), foregroundImage.height()),
+        };
+
+        Point points1[] = new Point[4];
+        rr1.points(points1);
+
+        Point points2[] = new Point[4];
+        rr2.points(points2);
+
+        Point tl = points1[0];
+        Point br = points1[0];
+        double tld = Math.sqrt(Math.pow(tl.x, 2) + Math.pow(tl.y, 2));
+        double brd = Math.sqrt(Math.pow(br.x, 2) + Math.pow(br.y, 2));
+        for (Point point : points1) {
+            double d = Math.sqrt(Math.pow(point.x, 2) + Math.pow(point.y, 2));
+            if (d <= tld){
+                tl = point;
+                tld = d;
+            }
+            if (d >= brd) {
+                br = point;
+                brd = d;
+            }
+        }
+        for (Point point : points2) {
+            double d = Math.sqrt(Math.pow(point.x, 2) + Math.pow(point.y, 2));
+            if (d <= tld){
+                tl = point;
+                tld = d;
+            }
+            if (d >= brd) {
+                br = point;
+                brd = d;
+            }
+        }
+        double width = br.x - tl.x;
+        double height = br.y - tl.y;
+
+        Point [] dstTri = new Point[] {
+                new Point(tl.x - 1.5 * width, tl.y - 2.3 * height),
+                new Point(br.x + 1.8 * width, tl.y - 2.3 * height),
+                new Point(br.x + 1.8 * width, br.y + 3.4 * height),
+        };
+
+        // 変形行列を作成
+        Mat affineTrans = Imgproc.getAffineTransform(new MatOfPoint2f(srcTri), new MatOfPoint2f(dstTri));
+
+        return affineTrans;
+    }
 
     /**
      * 縁ちゃんを描く
@@ -337,74 +397,21 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
      * @return
      */
     private Mat drawYukari(Mat frame) {
-        Log.d("drawYukari", "elemSize1 = " + frame.elemSize1() + " " + yukari.elemSize1());
-
-        Point [] srcTri = new Point[]{
-                new Point(0.0f, 0.0f),
-                new Point(yukari.width(), 0.0f),
-                new Point(yukari.width(), yukari.height()),
-        };
+        Mat backgroundImage = removeAlpha(frame);
 
         for (List<RotatedRect> eyePair : eyes) {
             RotatedRect rr1 = eyePair.get(0);
             RotatedRect rr2 = eyePair.get(1);
 
-            Point points1[] = new Point[4];
-            rr1.points(points1);
-
-            Point points2[] = new Point[4];
-            rr2.points(points2);
-
-
-            Point tl = points1[0];
-            Point br = points1[0];
-            double tld = Math.sqrt(Math.pow(tl.x, 2) + Math.pow(tl.y, 2));
-            double brd = Math.sqrt(Math.pow(br.x, 2) + Math.pow(br.y, 2));
-            for (Point point : points1) {
-                double d = Math.sqrt(Math.pow(point.x, 2) + Math.pow(point.y, 2));
-                if (d <= tld){
-                    tl = point;
-                    tld = d;
-                }
-                if (d >= brd) {
-                    br = point;
-                    brd = d;
-                }
-            }
-            for (Point point : points2) {
-                double d = Math.sqrt(Math.pow(point.x, 2) + Math.pow(point.y, 2));
-                if (d <= tld){
-                    tl = point;
-                    tld = d;
-                }
-                if (d >= brd) {
-                    br = point;
-                    brd = d;
-                }
-            }
-            double width = br.x - tl.x;
-            double height = br.y - tl.y;
-
-            Point [] dstTri = new Point[] {
-                    new Point(tl.x - 1.5 * width, tl.y - 2.3 * height),
-                    new Point(br.x + 1.8 * width, tl.y - 2.3 * height),
-                    new Point(br.x + 1.8 * width, br.y + 3.4 * height),
-            };
-
-            Mat base_img = removeAlpha(frame);
-
-            // 変形行列を作成
-            Mat affineTrans = Imgproc.getAffineTransform(new MatOfPoint2f(srcTri), new MatOfPoint2f(dstTri));
-            // Imgproc.warpAffine(yukari, frame, affineTrans, frame.size(), Imgproc.INTER_LINEAR, Core.BORDER_TRANSPARENT, new Scalar(0, 0, 0));
+            Mat affineTrans = computeAffineTransform(yukari, rr1, rr2);
 
             // 出力画像と同じ幅・高さのアルファ付き画像を作成
             Mat alpha0 = new Mat(frame.rows(), frame.cols(), yukari.type());
             Imgproc.warpAffine(yukari, alpha0, affineTrans, alpha0.size(), Imgproc.INTER_LINEAR, Core.BORDER_TRANSPARENT, new Scalar(0, 0, 0));
 
-            Mat img_dst3 = overlayImage(base_img, alpha0);
-            return img_dst3;
+            backgroundImage = overlayImage(backgroundImage, alpha0);
         }
-        return frame;
+        return backgroundImage;
     }
 
     /**
