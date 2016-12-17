@@ -5,6 +5,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import org.opencv.android.BaseLoaderCallback;
@@ -267,6 +268,69 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
 //        }
     }
 
+
+    /**
+     *  RGBA画像からAlphaを削除してRGB画像にする
+     * @param img_rgba
+     * @return
+     */
+    private Mat removeAlpha(Mat img_rgba) {
+        List<Mat> planes_rgba = new ArrayList<>();
+        for (int i = 0; i< 4; i++){
+            planes_rgba.add(new Mat());
+        }
+        Core.split(img_rgba, planes_rgba);
+
+        List<Mat> planes_rgb = new ArrayList<>();
+        planes_rgb.add(planes_rgba.get(0));
+        planes_rgb.add(planes_rgba.get(1));
+        planes_rgb.add(planes_rgba.get(2));
+        Mat img_rgb = new Mat();
+        Core.merge(planes_rgb, img_rgb);
+        return img_rgb;
+    }
+
+    /***
+     *
+     * @param backgroundImage
+     * @param foregroundImage
+     * @return
+     */
+    private Mat overlayImage(Mat backgroundImage, Mat foregroundImage) {
+        assert(backgroundImage.channels() == foregroundImage.channels());
+        assert(backgroundImage.size() == foregroundImage.size());
+
+        int maxVal = 255; //(int)(Math.pow(2, 8 * backgroundImage.elemSize1()) - 1);
+
+        // チャンネルに分解
+        List<Mat> planes_rgba = new ArrayList<>();
+        Core.split(foregroundImage, planes_rgba);
+
+        //RGBA画像をRGBに変換
+        Mat img_rgb = new Mat();
+        Core.merge(Arrays.asList(planes_rgba.get(0), planes_rgba.get(1), planes_rgba.get(2)), img_rgb);
+
+        //RGBA画像からアルファチャンネル抽出
+        Mat img_aaa = new Mat();
+        Core.merge(Arrays.asList(planes_rgba.get(3), planes_rgba.get(3), planes_rgba.get(3)), img_aaa);
+
+        //背景用アルファチャンネル
+        Mat negpos = new Mat();
+        Core.bitwise_not(planes_rgba.get(3), negpos);
+        Mat img_1ma = new Mat();
+        Core.merge(Arrays.asList(negpos, negpos, negpos), img_1ma);
+
+
+        Mat img_dst1 = new Mat();
+        Mat img_dst2 = new Mat();
+        Mat img_dst3 = new Mat();
+        Core.multiply(img_rgb, img_aaa, img_dst1, 1.0 / maxVal);
+        Core.multiply(backgroundImage, img_1ma, img_dst2, 1.0 / maxVal);
+        Core.add(img_dst1, img_dst2, img_dst3);
+        return img_dst3;
+    }
+
+
     /**
      * 縁ちゃんを描く
      * @param frame
@@ -326,6 +390,10 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
                     new Point(br.x + 1.8 * width, tl.y - 2.3 * height),
                     new Point(br.x + 1.8 * width, br.y + 3.4 * height),
             };
+
+            Mat base_img = removeAlpha(frame);
+
+            // 変形行列を作成
             Mat affineTrans = Imgproc.getAffineTransform(new MatOfPoint2f(srcTri), new MatOfPoint2f(dstTri));
             // Imgproc.warpAffine(yukari, frame, affineTrans, frame.size(), Imgproc.INTER_LINEAR, Core.BORDER_TRANSPARENT, new Scalar(0, 0, 0));
 
@@ -333,63 +401,7 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
             Mat alpha0 = new Mat(frame.rows(), frame.cols(), yukari.type());
             Imgproc.warpAffine(yukari, alpha0, affineTrans, alpha0.size(), Imgproc.INTER_LINEAR, Core.BORDER_TRANSPARENT, new Scalar(0, 0, 0));
 
-
-            List<Mat> base_planes_rgba = new ArrayList<>();
-            for (int i = 0; i< 4; i++){
-                base_planes_rgba.add(new Mat());
-            }
-            Core.split(frame, base_planes_rgba);
-
-            List<Mat> base_planes_rgb = new ArrayList<>();
-            base_planes_rgb.add(base_planes_rgba.get(0));
-            base_planes_rgb.add(base_planes_rgba.get(1));
-            base_planes_rgb.add(base_planes_rgba.get(2));
-            Mat base_img = new Mat();
-            Core.merge(base_planes_rgb, base_img);
-
-
-            List<Mat> planes_rgba = new ArrayList<>();
-            for (int i = 0; i< 4; i++){
-                planes_rgba.add(new Mat());
-            }
-            Core.split(alpha0, planes_rgba);
-
-            List<Mat> planes_rgb = new ArrayList<>();
-            planes_rgb.add(planes_rgba.get(0));
-            planes_rgb.add(planes_rgba.get(1));
-            planes_rgb.add(planes_rgba.get(2));
-            Mat img_rgb = new Mat();
-            Core.merge(planes_rgb, img_rgb);
-
-
-            List<Mat> planes_aaa = new ArrayList<>();
-            planes_aaa.add(planes_rgba.get(3));
-            planes_aaa.add(planes_rgba.get(3));
-            planes_aaa.add(planes_rgba.get(3));
-            Mat img_aaa = new Mat();
-            Core.merge(planes_aaa, img_aaa);
-
-
-            int maxVal = 255; //(int)(Math.pow(2, 8 * frame.elemSize1()) - 1);
-
-            Mat mul = new Mat();
-            Core.bitwise_not(planes_rgba.get(3), mul);
-            List<Mat> planes_1ma = new ArrayList<>();
-            planes_1ma.add(mul.clone());
-            planes_1ma.add(mul.clone());
-            planes_1ma.add(mul.clone());
-            Mat img_1ma = new Mat();
-            Core.merge(planes_1ma, img_1ma);
-
-            Mat img_dst1 = new Mat();
-            Core.multiply(img_rgb, img_aaa, img_dst1, 1.0 / maxVal);
-
-            Log.d("drawYukari", "size = " + frame.channels() + " " + frame.size() + " " + img_1ma.channels() + " " + img_1ma.size());
-            Mat img_dst2 = new Mat();
-            Core.multiply(base_img, img_1ma, img_dst2, 1.0 / maxVal);
-
-            Mat img_dst3 = new Mat();
-            Core.add(img_dst1, img_dst2, img_dst3);
+            Mat img_dst3 = overlayImage(base_img, alpha0);
             return img_dst3;
         }
         return frame;
