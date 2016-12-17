@@ -198,7 +198,7 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
             this.state = State.RECT;
         } else if (duration < step * 5) {
             this.state = State.EYE;
-        } else if (duration < step * 80) {
+        } else if (duration < step * 8) {
             this.state = State.EYES;
         } else {
             startTime = currentTime;
@@ -256,16 +256,10 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
     private Mat yukari;
 
     private void loadYukari() {
-//        try {
-            // yukari = Utils.loadResource(this, R.drawable.yukari, CvType.CV_8UC4);
-            Bitmap bmp = BitmapFactory.decodeResource(getResources(), R.drawable.yukari);
-            yukari = new Mat();
-            Utils.bitmapToMat(bmp, yukari);
-            Log.d("imread", "yukari.size = " + yukari.size() + " channels = " + yukari.channels());
-//        } catch (IOException e) {
-//            e.printStackTrace();
-//            Log.d("imread", "error");
-//        }
+        Bitmap bmp = BitmapFactory.decodeResource(getResources(), R.drawable.yukari_line);
+        yukari = new Mat();
+        Utils.bitmapToMat(bmp, yukari);
+        Log.d("imread", "yukari.size = " + yukari.size() + " channels = " + yukari.channels());
     }
 
 
@@ -380,9 +374,9 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         double height = br.y - tl.y;
 
         Point [] dstTri = new Point[] {
-                new Point(tl.x - 1.5 * width, tl.y - 2.3 * height),
-                new Point(br.x + 1.8 * width, tl.y - 2.3 * height),
-                new Point(br.x + 1.8 * width, br.y + 3.4 * height),
+                new Point(tl.x - 1.4 * width, tl.y - 2.3 * height),
+                new Point(br.x + 1.6 * width, tl.y - 2.3 * height),
+                new Point(br.x + 1.6 * width, br.y + 3.4 * height),
         };
 
         // 変形行列を作成
@@ -410,6 +404,7 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
             Imgproc.warpAffine(yukari, alpha0, affineTrans, alpha0.size(), Imgproc.INTER_LINEAR, Core.BORDER_TRANSPARENT, new Scalar(0, 0, 0));
 
             backgroundImage = overlayImage(backgroundImage, alpha0);
+            return backgroundImage;
         }
         return backgroundImage;
     }
@@ -424,10 +419,13 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
             return frame;
         }
         Scalar color = new Scalar(0, 255, 0);
-        double x = 500;
-        double y = 500;
-        Imgproc.rectangle(frame, new Point(y + 0, x + 0), new Point(y + minHeight, x + minWidth), color, 2);
-        Imgproc.rectangle(frame, new Point(y + 0, x + 0), new Point(y + maxHeight, x + maxWidth), color, 2);
+        double x = 200;
+        double y = 200;
+//        Imgproc.rectangle(frame, new Point(y + 0, x + 0), new Point(y + minHeight, x + minWidth), color, 2);
+//        Imgproc.rectangle(frame, new Point(y + 0, x + 0), new Point(y + maxHeight, x + maxWidth), color, 2);
+
+        Imgproc.rectangle(frame, new Point(x + 0, y + 0), new Point(x + minWidth, y + minHeight), color, 2);
+        Imgproc.rectangle(frame, new Point(x + 0, y + 0), new Point(x + maxWidth, y + maxHeight), color, 2);
         return frame;
     }
 
@@ -598,8 +596,10 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
                 }
                 RotatedRect rr2 = rrList.get(j);
                 if (isEyes(rr1, rr2)) {
-                    drawEye(rr1, frame);
-                    drawEye(rr2, frame);
+                    if (this.state == State.EYE || this.state == State.RECT) {
+                        drawEye(rr1, frame);
+                        drawEye(rr2, frame);
+                    }
                     List<RotatedRect> eyePair = new ArrayList<>();
                     eyePair.add(rr1);
                     eyePair.add(rr2);
