@@ -29,6 +29,8 @@ import org.opencv.imgproc.Imgproc;
 
 import android.app.Activity;
 import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.os.Bundle;
 import android.provider.ContactsContract;
 import android.util.Log;
@@ -195,7 +197,7 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
             this.state = State.RECT;
         } else if (duration < step * 5) {
             this.state = State.EYE;
-        } else if (duration < step * 6) {
+        } else if (duration < step * 80) {
             this.state = State.EYES;
         } else {
             startTime = currentTime;
@@ -255,11 +257,78 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
     private void loadYukari() {
         try {
             yukari = Utils.loadResource(this, R.drawable.yukari, CvType.CV_8UC4);
+            // yukari = Utils.loadResource(this, R.drawable.yukari, CvType.CV_64FC4);
+//            Bitmap bmp = BitmapFactory.decodeResource(getResources(), R.drawable.yukari);
+//            yukari = new Mat();
+//            Utils.bitmapToMat(bmp, yukari);
             Log.d("imread", "yukari.size = " + yukari.size());
         } catch (IOException e) {
             e.printStackTrace();
             Log.d("imread", "error");
         }
+    }
+
+    /**
+     * 縁ちゃんを描く
+     * @param frame
+     * @return
+     */
+    private Mat drawYukari(Mat frame) {
+        Point [] srcTri = new Point[]{
+                new Point(0.0f, 0.0f),
+                new Point(yukari.width(), 0.0f),
+                new Point(yukari.width(), yukari.height()),
+        };
+
+        for (List<RotatedRect> eyePair : eyes) {
+            RotatedRect rr1 = eyePair.get(0);
+            RotatedRect rr2 = eyePair.get(1);
+
+            Point points1[] = new Point[4];
+            rr1.points(points1);
+
+            Point points2[] = new Point[4];
+            rr2.points(points2);
+
+
+            Point tl = points1[0];
+            Point br = points1[0];
+            double tld = Math.sqrt(Math.pow(tl.x, 2) + Math.pow(tl.y, 2));
+            double brd = Math.sqrt(Math.pow(br.x, 2) + Math.pow(br.y, 2));
+            for (Point point : points1) {
+                double d = Math.sqrt(Math.pow(point.x, 2) + Math.pow(point.y, 2));
+                if (d <= tld){
+                    tl = point;
+                    tld = d;
+                }
+                if (d >= brd) {
+                    br = point;
+                    brd = d;
+                }
+            }
+            for (Point point : points2) {
+                double d = Math.sqrt(Math.pow(point.x, 2) + Math.pow(point.y, 2));
+                if (d <= tld){
+                    tl = point;
+                    tld = d;
+                }
+                if (d >= brd) {
+                    br = point;
+                    brd = d;
+                }
+            }
+            double width = br.x - tl.x;
+            double height = br.y - tl.y;
+
+            Point [] dstTri = new Point[] {
+                    new Point(tl.x - 1.5 * width, tl.y - 2.3 * height),
+                    new Point(br.x + 1.8 * width, tl.y - 2.3 * height),
+                    new Point(br.x + 1.8 * width, br.y + 3.4 * height),
+            };
+            Mat affineTrans = Imgproc.getAffineTransform(new MatOfPoint2f(srcTri), new MatOfPoint2f(dstTri));
+            Imgproc.warpAffine(yukari, frame, affineTrans, frame.size(), Imgproc.INTER_LINEAR, Core.BORDER_TRANSPARENT, new Scalar(0, 0, 0));
+        }
+        return frame;
     }
 
     /**
@@ -276,22 +345,6 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         double y = 500;
         Imgproc.rectangle(frame, new Point(y + 0, x + 0), new Point(y + minHeight, x + minWidth), color, 2);
         Imgproc.rectangle(frame, new Point(y + 0, x + 0), new Point(y + maxHeight, x + maxWidth), color, 2);
-        // return frame;
-
-
-        Point [] srcTri = new Point[]{
-                new Point(0.0f, 0.0f),
-                new Point(yukari.width(), 0.0f),
-                new Point(yukari.width(), yukari.height()),
-        };
-        Point [] dstTri = new Point[] {
-                new Point(0, 0),
-                new Point(100, 0),
-                new Point(100, 100),
-        };
-
-        Mat affineTrans = Imgproc.getAffineTransform(new MatOfPoint2f(srcTri), new MatOfPoint2f(dstTri));
-        Imgproc.warpAffine(yukari, frame, affineTrans, frame.size(), Imgproc.INTER_LINEAR, Core.BORDER_TRANSPARENT, new Scalar(0, 0, 0));
         return frame;
     }
 
@@ -433,6 +486,8 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
         return frame;
     }
 
+    private List<List<RotatedRect>> eyes = new ArrayList<>();
+
     private Mat drawEyes(Mat maskedImage, Mat frame) {
         List<RotatedRect> rrList = new ArrayList<RotatedRect>();
 
@@ -450,6 +505,7 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
             }
         }
 
+        eyes.clear();
         int len = rrList.size();
         for (int i = 0; i< len; i ++) {
             RotatedRect rr1 = rrList.get(i);
@@ -461,8 +517,15 @@ public class FdActivity extends Activity implements CvCameraViewListener2 {
                 if (isEyes(rr1, rr2)) {
                     drawEye(rr1, frame);
                     drawEye(rr2, frame);
+                    List<RotatedRect> eyePair = new ArrayList<>();
+                    eyePair.add(rr1);
+                    eyePair.add(rr2);
+                    eyes.add(eyePair);
                 }
             }
+        }
+        if(this.debug && this.state == State.EYES) {
+            frame = drawYukari(frame);
         }
         return frame;
     }
